@@ -1,0 +1,160 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+const char* ssid = "YOUR_WIFI_NAME";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+WebServer server(80);
+
+const int currentPin = 34;
+
+// ACS712-20A sensitivity = 100 mV/A
+// ACS712-5A  sensitivity = 185 mV/A
+// ACS712-30A sensitivity = 66 mV/A
+const float sensitivity = 0.066;
+
+// Zero-current voltage
+float zeroCurrentVoltage = 2.5;
+
+float readCurrent()
+{
+  int samples = 1000;
+  long total = 0;
+
+  for (int i = 0; i < samples; i++)
+  {
+    total += analogRead(currentPin);
+  }
+
+  float averageADC = total / (float)samples;
+
+  // ESP32 ADC: approximately 0–3.3V, 12-bit (0–4095)
+  float voltage = averageADC * 3.3 / 4095.0;
+
+  float current = (voltage - zeroCurrentVoltage) / sensitivity;
+
+  // Remove small noise around zero
+  if (abs(current) < 0.05)
+    current = 0;
+
+  return current;
+}
+
+void handleRoot()
+{
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 Current Monitor</title>
+
+  <style>
+    body {
+      font-family: Arial;
+      text-align: center;
+      background: #f2f2f2;
+      margin-top: 50px;
+    }
+
+    .card {
+      background: white;
+      width: 320px;
+      margin: auto;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+
+    h1 {
+      color: #333;
+    }
+
+    #current {
+      font-size: 45px;
+      font-weight: bold;
+      color: #007bff;
+    }
+
+    .unit {
+      font-size: 22px;
+      color: #555;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+    <h1>Current Monitor</h1>
+
+    <div id="current">0.00</div>
+    <div class="unit">Amperes</div>
+  </div>
+
+<script>
+
+function updateCurrent()
+{
+  fetch("/current")
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById("current").innerHTML =
+        parseFloat(data).toFixed(2);
+    });
+}
+
+setInterval(updateCurrent, 1000);
+
+updateCurrent();
+
+</script>
+
+</body>
+</html>
+)rawliteral";
+
+  server.send(200, "text/html", html);
+}
+
+void handleCurrent()
+{
+  float current = readCurrent();
+
+  server.send(200, "text/plain", String(current, 2));
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  analogReadResolution(12);
+
+  WiFi.begin(ssid, password);
+
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("WiFi connected!");
+
+  Serial.print("ESP32 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", handleRoot);
+  server.on("/current", handleCurrent);
+
+  server.begin();
+
+  Serial.println("Web server started!");
+}
+
+void loop()
+{
+  server.handleClient();
+}
