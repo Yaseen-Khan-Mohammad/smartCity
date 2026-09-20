@@ -1,38 +1,106 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-// ================= WIFI =================
+// =====================================================
+// WIFI SETTINGS
+// =====================================================
+
 const char* ssid = "YOUR_WIFI_NAME";
 const char* password = "YOUR_WIFI_PASSWORD";
 
 WebServer server(80);
 
-// ================= CURRENT SENSOR =================
+
+// =====================================================
+// ACS712 SETTINGS
+// =====================================================
+
 const int currentPin = 32;
 
-// For ACS712 20A
-const float sensitivity = 0.100;
+// ACS712 30A sensitivity
+// 66 mV per Ampere
+const float sensitivity = 0.066;
 
-// Change this after calibration
+// Actual zero-current voltage
 float zeroVoltage = 2.5;
 
 
-// ================= READ CURRENT =================
-float readCurrent()
-{
-  long sum = 0;
+// =====================================================
+// READ SENSOR VOLTAGE
+// =====================================================
 
-  // Take many samples to reduce noise
-  for (int i = 0; i < 2000; i++)
+float readSensorVoltage()
+{
+  long total = 0;
+
+  const int samples = 1000;
+
+  for (int i = 0; i < samples; i++)
   {
-    sum += analogRead(currentPin);
+    total += analogRead(currentPin);
   }
 
-  float adcValue = sum / 2000.0;
+  float averageADC = total / (float)samples;
 
-  float voltage = adcValue * 3.3 / 4095.0;
+  float voltage = averageADC * 3.3 / 4095.0;
 
-  float current = (voltage - zeroVoltage) / sensitivity;
+  return voltage;
+}
+
+
+// =====================================================
+// CALIBRATE ZERO CURRENT
+// =====================================================
+
+void calibrateSensor()
+{
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("ACS712 CALIBRATION");
+  Serial.println("================================");
+
+  Serial.println("Make sure NO CURRENT is flowing.");
+  Serial.println("Calibration starting in 3 seconds...");
+
+  delay(3000);
+
+  long total = 0;
+
+  const int samples = 3000;
+
+  for (int i = 0; i < samples; i++)
+  {
+    total += analogRead(currentPin);
+    delayMicroseconds(100);
+  }
+
+  float averageADC = total / (float)samples;
+
+  zeroVoltage = averageADC * 3.3 / 4095.0;
+
+  Serial.print("Average ADC = ");
+  Serial.println(averageADC);
+
+  Serial.print("Zero Voltage = ");
+  Serial.print(zeroVoltage, 4);
+  Serial.println(" V");
+
+  Serial.println("Calibration complete!");
+  Serial.println("================================");
+  Serial.println();
+}
+
+
+// =====================================================
+// READ CURRENT
+// =====================================================
+
+float readCurrent()
+{
+  float sensorVoltage = readSensorVoltage();
+
+  float current =
+    (sensorVoltage - zeroVoltage) / sensitivity;
 
   // Remove small noise
   if (abs(current) < 0.10)
@@ -44,7 +112,10 @@ float readCurrent()
 }
 
 
-// ================= HTML PAGE =================
+// =====================================================
+// HTML WEBPAGE
+// =====================================================
+
 void handleRoot()
 {
   String html = R"rawliteral(
@@ -55,48 +126,100 @@ void handleRoot()
 
 <head>
 
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport"
+content="width=device-width, initial-scale=1">
 
 <title>ESP32 Current Monitor</title>
 
 <style>
 
-body {
-  font-family: Arial, sans-serif;
-  background: #f2f2f2;
-  text-align: center;
-  margin-top: 60px;
+body
+{
+    font-family: Arial, sans-serif;
+
+    background: #f2f2f2;
+
+    text-align: center;
+
+    margin: 0;
+
+    padding-top: 50px;
 }
 
-.card {
-  background: white;
-  width: 320px;
-  margin: auto;
-  padding: 30px;
-  border-radius: 20px;
-  box-shadow: 0px 5px 15px rgba(0,0,0,0.2);
+
+.card
+{
+    background: white;
+
+    width: 320px;
+
+    margin: auto;
+
+    padding: 30px;
+
+    border-radius: 20px;
+
+    box-shadow:
+    0px 5px 15px
+    rgba(0,0,0,0.2);
 }
 
-h1 {
-  color: #333;
+
+h1
+{
+    color: #333;
 }
 
-.value {
-  font-size: 50px;
-  font-weight: bold;
-  color: #007bff;
-  margin: 20px;
+
+.current
+{
+    font-size: 50px;
+
+    font-weight: bold;
+
+    margin-top: 25px;
+
+    color: #007bff;
 }
 
-.unit {
-  font-size: 22px;
-  color: #555;
+
+.unit
+{
+    font-size: 22px;
+
+    color: #555;
+
+    margin-bottom: 25px;
 }
 
-.status {
-  margin-top: 20px;
-  font-size: 16px;
-  color: green;
+
+.voltage
+{
+    font-size: 20px;
+
+    color: #333;
+
+    margin-top: 15px;
+}
+
+
+.status
+{
+    margin-top: 25px;
+
+    color: green;
+
+    font-weight: bold;
+}
+
+
+.small
+{
+    margin-top: 15px;
+
+    font-size: 13px;
+
+    color: #777;
 }
 
 </style>
@@ -106,51 +229,102 @@ h1 {
 
 <body>
 
+
 <div class="card">
 
 <h1>⚡ Current Monitor</h1>
 
-<div class="value">
 
-<span id="current">0.00</span>
+<div class="current">
+
+<span id="current">
+0.00
+</span>
 
 </div>
+
 
 <div class="unit">
 Amperes (A)
 </div>
 
-<div class="status">
-● ESP32 Connected
+
+<div class="voltage">
+
+Sensor Voltage:
+
+<span id="voltage">
+0.00
+</span>
+
+V
+
 </div>
+
+
+<div class="status">
+
+● ESP32 Connected
+
+</div>
+
+
+<div class="small">
+
+ACS712 30A Sensor
+
+</div>
+
 
 </div>
 
 
 <script>
 
-function updateCurrent()
+
+function updateData()
 {
 
-  fetch("/current")
+    fetch("/data")
 
-  .then(response => response.text())
+    .then(response => response.json())
 
-  .then(data =>
-  {
+    .then(data =>
+    {
 
-    document.getElementById("current").innerHTML =
-    parseFloat(data).toFixed(2);
+        document.getElementById("current")
+        .innerHTML =
+        data.current.toFixed(2);
 
-  });
+
+        document.getElementById("voltage")
+        .innerHTML =
+        data.voltage.toFixed(3);
+
+    })
+
+    .catch(error =>
+    {
+
+        console.log("Connection error");
+
+    });
 
 }
 
-setInterval(updateCurrent, 1000);
 
-updateCurrent();
+// Update every 1 second
+
+setInterval(updateData, 1000);
+
+
+// First update
+
+updateData();
+
 
 </script>
+
 
 </body>
 
@@ -158,64 +332,170 @@ updateCurrent();
 
 )rawliteral";
 
-  server.send(200, "text/html", html);
-}
-
-
-// ================= SEND CURRENT =================
-void handleCurrent()
-{
-  float current = readCurrent();
 
   server.send(
     200,
-    "text/plain",
-    String(current, 2)
+    "text/html",
+    html
   );
 }
 
 
-// ================= SETUP =================
-void setup()
+// =====================================================
+// SEND SENSOR DATA
+// =====================================================
+
+void handleData()
 {
-  Serial.begin(115200);
 
-  analogReadResolution(12);
+  float sensorVoltage =
+    readSensorVoltage();
 
-  Serial.println();
-  Serial.println("Connecting to WiFi...");
+  float current =
+    (sensorVoltage - zeroVoltage)
+    / sensitivity;
 
-  WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED)
+  // Remove small noise
+
+  if (abs(current) < 0.10)
   {
-    delay(500);
-
-    Serial.print(".");
+    current = 0;
   }
 
-  Serial.println();
-  Serial.println("WiFi Connected!");
 
-  Serial.print("ESP32 IP Address: ");
+  String json = "{";
 
-  Serial.println(WiFi.localIP());
+  json += "\"current\":";
+  json += String(current, 2);
+
+  json += ",";
+
+  json += "\"voltage\":";
+  json += String(sensorVoltage, 3);
+
+  json += "}";
 
 
-  // Webpage
-  server.on("/", handleRoot);
-
-  // Current API
-  server.on("/current", handleCurrent);
-
-  server.begin();
-
-  Serial.println("Web Server Started!");
+  server.send(
+    200,
+    "application/json",
+    json
+  );
 }
 
 
-// ================= LOOP =================
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+
+  Serial.begin(115200);
+
+
+  // ESP32 ADC resolution
+
+  analogReadResolution(12);
+
+
+  // Optional attenuation
+
+  analogSetPinAttenuation(
+    currentPin,
+    ADC_11db
+  );
+
+
+  Serial.println();
+
+  Serial.println(
+    "ESP32 ACS712 CURRENT MONITOR"
+  );
+
+
+  // -------------------------------------------------
+  // CALIBRATE SENSOR
+  // -------------------------------------------------
+
+  calibrateSensor();
+
+
+  // -------------------------------------------------
+  // CONNECT WIFI
+  // -------------------------------------------------
+
+  Serial.println(
+    "Connecting to WiFi..."
+  );
+
+
+  WiFi.begin(
+    ssid,
+    password
+  );
+
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+
+    delay(500);
+
+    Serial.print(".");
+
+  }
+
+
+  Serial.println();
+
+  Serial.println(
+    "WiFi Connected!"
+  );
+
+
+  Serial.print(
+    "ESP32 IP Address: "
+  );
+
+  Serial.println(
+    WiFi.localIP()
+  );
+
+
+  // -------------------------------------------------
+  // WEB SERVER
+  // -------------------------------------------------
+
+  server.on(
+    "/",
+    handleRoot
+  );
+
+
+  server.on(
+    "/data",
+    handleData
+  );
+
+
+  server.begin();
+
+
+  Serial.println(
+    "Web Server Started!"
+  );
+
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
 void loop()
 {
+
   server.handleClient();
+
 }
