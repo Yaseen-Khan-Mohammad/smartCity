@@ -1,0 +1,46 @@
+const int currentPin = 32;
+
+const float ADC_VOLTAGE = 3.3;
+const float ADC_MAX = 4095.0;
+
+const float sensitivity = 0.100;   // ACS712 20A
+float zeroVoltage = 2.5;
+
+float readCurrent()
+{
+  long sum = 0;
+
+  for (int i = 0; i < 2000; i++)
+  {
+    sum += analogRead(currentPin);
+  }
+
+  float adcValue = sum / 2000.0;
+
+  float voltage = adcValue * ADC_VOLTAGE / ADC_MAX;
+
+  float current = (voltage - zeroVoltage) / sensitivity;
+
+  if (abs(current) < 0.10)
+    current = 0;
+
+  return current;
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  analogReadResolution(12);
+}
+
+void loop()
+{
+  float current = readCurrent();
+
+  Serial.print("Current = ");
+  Serial.print(current, 2);
+  Serial.println(" A");
+
+  delay(500);
+}
